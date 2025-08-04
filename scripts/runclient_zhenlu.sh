@@ -1,0 +1,1 @@
+adb shell '/oem/usr/bin/ai_client_start_stop --server 10.10.10.92 --port 8088 --recordtime 100'

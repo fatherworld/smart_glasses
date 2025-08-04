@@ -1,0 +1,1 @@
+adb push runclient_rv1106b.sh /oem/usr/scripts && adb shell "cd /oem/usr/scripts && chmod +x runclient_rv1106b.sh && reboot"

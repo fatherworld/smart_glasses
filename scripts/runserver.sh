@@ -1,0 +1,1 @@
+adb shell '/oem/usr/bin/ai_client_start_stop --enable-gpio --server 10.10.10.65 --port 8082 --enable-upload --format stream --enable-streaming'
