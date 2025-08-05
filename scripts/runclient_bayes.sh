@@ -1,1 +1,1 @@
-adb shell '/oem/usr/bin/ai_client_start_stop --server 10.10.10.84 --port 8049 --recordtime 10'
+adb shell '/oem/usr/bin/ai_client_start_stop --server 10.10.10.52 --port 8049 --recordtime 100'

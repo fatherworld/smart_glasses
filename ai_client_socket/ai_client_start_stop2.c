@@ -679,8 +679,6 @@ static RK_S32 send_voice_file_to_socket_server(MY_RECORDER_CTX_S *ctx) {
     printf("INFO: File size: %ld bytes\n", file_size);
     fflush(stdout);
     
-
-
     sendingvoice = RK_TRUE;
     // 发送语音开始信号
     record_timestamp(&g_timing_stats.voice_start_time, "语音开始发送");
@@ -1018,15 +1016,15 @@ static RK_S32 receive_socket_response(MY_RECORDER_CTX_S *ctx) {
     int error_received = 0;
     int consecutive_non_progress_msgs = 0;  // 连续非进展消息计数
     char log_msg[256];
-    
+    //const char * saveaudiopath = "/tmp/test.pcm";
     printf("=== 开始接收服务器响应 ===");
     // FILE *fp = NULL;
-    // if (ctx->outputFilePath) {
-    //     fp = fopen(ctx->outputFilePath, "wb");
+    // if (saveaudiopath) {
+    //     fp = fopen(saveaudiopath, "wb");
     //     if (!fp) {
-    //         printf("ERROR: Cannot open output file: %s\n", ctx->outputFilePath);
+    //         printf("ERROR: Cannot open output file: %s\n", saveaudiopath);
     //     }
-    //     printf("INFO: Started recording to: %s\n", ctx->outputFilePath);
+    //     printf("INFO: Started recording to: %s\n", saveaudiopath);
     //     fflush(stdout);
     // }
 
@@ -1049,8 +1047,8 @@ static RK_S32 receive_socket_response(MY_RECORDER_CTX_S *ctx) {
         }
         
         message_count++;
-        snprintf(log_msg, sizeof(log_msg), "INFO: Processing message #%d (type=0x%02X)", message_count, msg_type);
-        printf(log_msg);
+        // snprintf(log_msg, sizeof(log_msg), "INFO: Processing message #%d (type=0x%02X)", message_count, msg_type);
+        // printf(log_msg);
         
         // 处理接收到的消息
         process_received_message(ctx, msg_type, buffer, data_len);
@@ -1088,7 +1086,7 @@ static RK_S32 receive_socket_response(MY_RECORDER_CTX_S *ctx) {
             //     fclose(fp);
             //     fp = NULL;
             // }
-            // 继续接收一点时间，以防还有后续消息
+            //继续接收一点时间，以防还有后续消息
             usleep(500000); // 等待500ms
         }
         
@@ -1131,12 +1129,12 @@ static RK_S32 receive_socket_response(MY_RECORDER_CTX_S *ctx) {
     gInterruptAIResponse = RK_FALSE; // 恢复
     gAIResponseActive = RK_FALSE;   // 重置AI响应状态
     
-    snprintf(log_msg, sizeof(log_msg), "INFO: Response processing completed (received %d messages)", message_count);
-    printf(log_msg);
+    //snprintf(log_msg, sizeof(log_msg), "INFO: Response processing completed (received %d messages)", message_count);
+    //printf(log_msg);
     printf("=== 响应接收完成 ===");
     
     // 打印详细的时间统计报告
-    print_timing_report();
+    //print_timing_report();
     
     return RK_SUCCESS;
 }
@@ -1145,7 +1143,7 @@ static RK_S32 receive_socket_response(MY_RECORDER_CTX_S *ctx) {
 static RK_S32 upload_audio_to_socket_server(MY_RECORDER_CTX_S *ctx) {
     char log_msg[256];
     
-    printf("INFO: upload_audio_to_socket_server function called");
+    //printf("INFO: upload_audio_to_socket_server function called");
     gInterruptAIResponse = RK_FALSE; // 重置中断标志，开始新的AI响应
     
     // 根据用户设置初始化时间统计系统
@@ -1170,14 +1168,14 @@ static RK_S32 upload_audio_to_socket_server(MY_RECORDER_CTX_S *ctx) {
         return RK_FAILURE;
     }
     
-    snprintf(log_msg, sizeof(log_msg), "INFO: Server: %s:%d", ctx->serverHost, ctx->serverPort);
-    printf(log_msg);
-    snprintf(log_msg, sizeof(log_msg), "INFO: File: %s", ctx->outputFilePath);
-    printf(log_msg);
-    snprintf(log_msg, sizeof(log_msg), "INFO: Format: %s", ctx->responseFormat);
-    printf(log_msg);
-    snprintf(log_msg, sizeof(log_msg), "INFO: Streaming: %s", ctx->s32EnableStreaming ? "enabled" : "disabled");
-    printf(log_msg);
+    // snprintf(log_msg, sizeof(log_msg), "INFO: Server: %s:%d", ctx->serverHost, ctx->serverPort);
+    // printf(log_msg);
+    // snprintf(log_msg, sizeof(log_msg), "INFO: File: %s", ctx->outputFilePath);
+    // printf(log_msg);
+    // snprintf(log_msg, sizeof(log_msg), "INFO: Format: %s", ctx->responseFormat);
+    // printf(log_msg);
+    // snprintf(log_msg, sizeof(log_msg), "INFO: Streaming: %s", ctx->s32EnableStreaming ? "enabled" : "disabled");
+    // printf(log_msg);
     
     // 连接服务器
     //printf("INFO: Starting connection to socket server");
@@ -1186,32 +1184,32 @@ static RK_S32 upload_audio_to_socket_server(MY_RECORDER_CTX_S *ctx) {
         printf("ERROR: Failed to connect to socket server");
         return RK_FAILURE;
     }
-    printf("INFO: Successfully connected to socket server");
+    //printf("INFO: Successfully connected to socket server");
     
     // 发送配置消息
-    printf("INFO: Sending configuration message");
+    //printf("INFO: Sending configuration message");
     if (send_config_message(ctx->sockfd, ctx->responseFormat) != RK_SUCCESS) {
         printf("ERROR: Failed to send configuration message");
         close(ctx->sockfd);
         return RK_FAILURE;
     }
-    printf("INFO: Configuration message sent successfully");
+    //printf("INFO: Configuration message sent successfully");
     
     // 发送语音文件
-    printf("INFO: Starting voice file transmission");
+    //printf("INFO: Starting voice file transmission");
     if (send_voice_file_to_socket_server(ctx) != RK_SUCCESS) {
         printf("ERROR: Failed to send voice file");
         close(ctx->sockfd);
         return RK_FAILURE;
     }
-    printf("INFO: Voice file sent successfully");
+    //printf("INFO: Voice file sent successfully");
     
     // 接收响应
-    printf("INFO: Starting to receive server response");
+    //printf("INFO: Starting to receive server response");
     RK_S32 result = receive_socket_response(ctx);
     grecvservRespon = RK_FALSE;
     // 关闭连接
-    printf("INFO: Closing socket connection");
+    //printf("INFO: Closing socket connection");
     //close(ctx->sockfd);
     
     if (result == RK_SUCCESS) {
@@ -2520,12 +2518,12 @@ static void* recording_thread(void *ptr) {
                          RK_MPI_AI_DisableChn(ctx->s32DevId, ctx->s32ChnIndex);
                          RK_MPI_AI_Disable(ctx->s32DevId);
                          
-                         printf("INFO: Audio device released, starting upload...\n");
+                         //printf("INFO: Audio device released, starting upload...\n");
                          fflush(stdout);
                          upload_audio_to_socket_server(ctx);
                          
                          // 上传完成后重新初始化录音设备，为下次录音做准备
-                         printf("INFO: Re-initializing audio device for next recording...\n");
+                         //printf("INFO: Re-initializing audio device for next recording...\n");
                          fflush(stdout);
                          
                          // 重新设置音频设备
@@ -2577,7 +2575,7 @@ static void* recording_thread(void *ptr) {
                          fflush(stdout);
                      }              
                  // 短暂等待避免CPU占用过高
-                 usleep(10000); // 10ms
+                 usleep(6000); // 6ms
                 }
             }
             
@@ -3003,7 +3001,7 @@ static RK_S32 wait_for_gpio_press(MY_RECORDER_CTX_S *ctx) {
         //         return RK_FAILURE;
         //     }
         // }
-        printf("INFO: [DEBUG-MSG] Received message: type=0x%02X, data_length=%u ,msg=%s\n", msg_type, data_len,buffer);
+        //printf("INFO: [DEBUG-MSG] Received message: type=0x%02X, data_length=%u ,msg=%s\n", msg_type, data_len,buffer);
 
         if(msg_type == MSG_TEXT_DATA)
         {
@@ -3159,7 +3157,7 @@ int main(int argc, const char **argv) {
     ctx->serverPort = 8082;                             // 默认服务器端口（与SocketServer一致）
     ctx->responseFormat = "json";                         // 默认响应格式
     ctx->s32EnableStreaming = 1;                            // 默认不启用流式播放
-    ctx->s32PlaybackSampleRate = 16000;                     // 默认播放采样率（标准TTS采样率）
+    ctx->s32PlaybackSampleRate = 8000;                     // 默认播放采样率（标准TTS采样率）
     ctx->s32PlaybackChannels = 1;                             // 默认播放声道数（单声道）
     ctx->s32PlaybackBitWidth = 16;                             // 默认播放位宽
     ctx->s32EnableTiming = 0;                               // 默认不启用详细时间统计
