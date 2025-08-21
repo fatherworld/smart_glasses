@@ -426,9 +426,7 @@ void loop() {
 int main() {
     usleep(10 * 1000);
     setup();
-    printf("bayes[0]............");
 	clr_cache();
-    printf("bayes[1]............");
     // 初始化LVGL
     lvgl_init();
 //    初始化应用
@@ -438,7 +436,6 @@ int main() {
     while(1) {
         //处理LVGL任务
         lv_task_handler();
-
         // 检查是否需要隐藏微笑标签
         if (hide_smile_flag) {
             //return 0;
@@ -447,7 +444,6 @@ int main() {
                 lv_label_set_text(ui_Label2, "--");
                 lv_obj_invalidate(lv_scr_act());  // 关键修改： invalidate整个屏幕
                 lv_refr_now(lv_disp_get_default()); // 强制刷新
-                 
                 printf("标签文本已更改为\n");
             }
             hide_smile_flag = false;

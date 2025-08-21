@@ -1,0 +1,1 @@
+adb shell '/oem/usr/bin/smart_glasses_streamer_arm -s 10.10.10.251 -p 8888 '

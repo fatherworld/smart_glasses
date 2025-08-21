@@ -46,6 +46,19 @@
 #include <getopt.h>
 #include "test_comm_argparse.h"
 
+//视频采集配置参数
+#define VIDEO_DEVICE "/dev/video7"
+#define RAW_FILE_PATH "/tmp/2.raw"
+#define IMAGE_WIDTH 320
+#define IMAGE_HEIGHT 240
+#define PIXEL_FORMAT "NV12"
+#define STREAM_COUNT 1
+#define STREAM_SKIP 30
+#define BUFFER_SIZE (320 * 240 * 3 / 2)  // NV12格式的缓冲区大小
+#define MAX_RETRY_COUNT 5
+#define RETRY_DELAY_MS 1000
+
+
 // Socket协议相关定义
 #define SOCKET_BUFFER_SIZE (8192)
 #define AUDIO_PLAY_BUFFER_SIZE (655360)  // 增大到64KB，支持大的音频数据包
@@ -68,6 +81,7 @@
 #define MSG_CONFIG          0x0D    // 配置消息
 #define MSG_AI_NEWCHAT      0x0E    // 新对话开始
 #define MSG_CLIENT_HEART    0x10    // 客户端心跳
+#define MSG_IMAGE_DATA      0x11    // 图片数据
 // 音频包分段结束标记（与Python SocketClient保持一致）
 static const unsigned char AUDIO_END_MARKER[8] = {0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF};
 
@@ -194,6 +208,31 @@ static void sigterm_handler(int sig) {
     gRecorderExit = RK_TRUE;
 }
 
+static int capture_thread_func(void *arg) 
+{
+    char cmd[512];
+    printf("[INFO] 视频采集启动\n");
+    // 构建v4l2-ctl命令
+    snprintf(cmd, sizeof(cmd),
+            "v4l2-ctl -d %s --set-fmt-video=width=%d,height=%d,pixelformat=%s "
+            "--stream-mmap=3 --stream-to=%s --stream-count=%d --stream-skip=%d",
+            VIDEO_DEVICE, IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_FORMAT,
+            RAW_FILE_PATH, STREAM_COUNT, STREAM_SKIP);
+    printf("[INFO] 执行命令: %s\n", cmd);
+    int result = system(cmd);
+    printf("result-----:%d \n",result);
+    if (result == 0) {
+        printf("[INFO] 本次视频采集成功...\n");
+        // 等待一段时间再进行下一次采集
+        usleep(100);  // 100ms
+    } else {
+        printf("本次视频采集失败 ... [INFO] 等待 %d ms 后重试...\n");
+        usleep(1000);
+    }
+    printf("[INFO] 视频采集线程结束\n");
+    return result;
+}
+
 // 时间戳日志输出函数
 static void socket_log_with_time(const char *message) {
     struct timeval tv;
@@ -277,7 +316,9 @@ static RK_S32 socket_receive_message_msg_press(int sockfd, unsigned char *msg_ty
     
     // === 监控select等待时间 ===
     gettimeofday(&select_start, NULL);
-    printf("📡 [DEBUG-SELECT] 开始等待socket开始录音数据...\n");
+
+
+    printf("📡 [DEBUG-SELECT  ___press] 开始等待socket开始录音数据.. grecvservRespon:%d. \n",grecvservRespon);
     
     // 检查socket是否有数据可读
     int select_result = select(sockfd + 1, &readfds, NULL, NULL, &timeout);
@@ -370,7 +411,7 @@ static RK_S32 socket_receive_message_msg_release(int sockfd, unsigned char *msg_
     
     // === 监控select等待时间 ===
     gettimeofday(&select_start, NULL);
-    printf("📡 [DEBUG-SELECT] 开始等待socket结束录音数据...\n");
+    printf("📡 [DEBUG-SELECT] ___release 开始等待socket结束录音数据...\n");
     
     // 检查socket是否有数据可读
     int select_result = select(sockfd + 1, &readfds, NULL, NULL, &timeout);
@@ -455,7 +496,7 @@ static RK_S32 socket_receive_message(int sockfd, unsigned char *msg_type, void *
     
     // 设置接收超时
     struct timeval timeout;
-    timeout.tv_sec = 6;  // 30秒超时
+    timeout.tv_sec = 80;  // 30秒超时
     timeout.tv_usec = 0;
     
     fd_set readfds;
@@ -464,7 +505,7 @@ static RK_S32 socket_receive_message(int sockfd, unsigned char *msg_type, void *
     
     // === 监控select等待时间 ===
     gettimeofday(&select_start, NULL);
-    printf("📡 [DEBUG-SELECT] 开始等待socket数据...\n");
+    printf("📡 [DEBUG-SELECT] 开始等待socket数据  nomal...\n");
     
     // 检查socket是否有数据可读
     int select_result = select(sockfd + 1, &readfds, NULL, NULL, &timeout);
@@ -630,6 +671,41 @@ static int connect_to_socket_server(const char *host, int port) {
 }
 
 // 发送配置消息
+static RK_S32 send_images_message(int sockfd) {
+    char config_json[256];
+    unsigned char *raw_buffer = (unsigned char *)(malloc(BUFFER_SIZE));
+    printf("INFO: Sending images message to server...\n");
+    fflush(stdout);
+    int res = capture_thread_func(NULL);
+    if(!res)
+    {
+        FILE* raw_file = fopen(RAW_FILE_PATH, "rb");
+        if (!raw_file) {
+            printf("[ERROR] 无法打开raw文件: %s\n", strerror(errno));
+        }
+        size_t bytes_read = fread(raw_buffer, 1, BUFFER_SIZE, raw_file);
+        printf("imagedata->bytes_read:%d \n",bytes_read);
+        fclose(raw_file);
+        raw_file = NULL;
+    }
+    // 构建配置JSON
+    //snprintf(config_json, sizeof(config_json), "{\"response_format\": \"%s\"}", response_format);
+    int imagelen = BUFFER_SIZE;
+
+    RK_S32 result = socket_send_message(sockfd, MSG_IMAGE_DATA, raw_buffer, BUFFER_SIZE);
+    
+    // 记录配置发送完成时间
+    if (result == RK_SUCCESS) {
+        record_timestamp(&g_timing_stats.config_sent_time, "图像消息发送完成");
+    }
+
+
+    return result;
+}
+
+
+
+// 发送配置消息
 static RK_S32 send_config_message(int sockfd, const char *response_format) {
     char config_json[256];
     
@@ -679,7 +755,7 @@ static RK_S32 send_voice_file_to_socket_server(MY_RECORDER_CTX_S *ctx) {
     printf("INFO: File size: %ld bytes\n", file_size);
     fflush(stdout);
     
-    sendingvoice = RK_TRUE;
+    
     // 发送语音开始信号
     record_timestamp(&g_timing_stats.voice_start_time, "语音开始发送");
     if (socket_send_message(ctx->sockfd, MSG_VOICE_START, NULL, 0) != RK_SUCCESS) {
@@ -727,7 +803,7 @@ static RK_S32 send_voice_file_to_socket_server(MY_RECORDER_CTX_S *ctx) {
         printf("INFO: 语音包结束\n");
         return RK_FAILURE;
     }
-    sendingvoice = RK_FALSE;
+    
     // 记录语音发送结束时间
     record_timestamp(&g_timing_stats.voice_end_time, "语音发送结束");
     
@@ -741,7 +817,7 @@ static RK_S32 send_voice_file_to_socket_server(MY_RECORDER_CTX_S *ctx) {
 static RK_S32 process_received_message(MY_RECORDER_CTX_S *ctx, unsigned char msg_type, const void *data, unsigned int data_len) {
     char log_msg[256];
     static int audio_started = 0;
-    
+    printf("000000000000000000000000000000000000:%0x \n",msg_type);
     switch (msg_type) {
         case MSG_TEXT_DATA:
             if (data_len > 0) {
@@ -751,13 +827,14 @@ static RK_S32 process_received_message(MY_RECORDER_CTX_S *ctx, unsigned char msg
             
         case MSG_AUDIO_DATA:
             // 检查音频是否被中断，如果是则清空缓冲区并忽略新数据
+            printf("is_audio_interrupted():%d \n",is_audio_interrupted());
             if (is_audio_interrupted()) {
                 // 清空音频缓冲区
                 ctx->audio_buffer_size = 0;
                 // 静默忽略被中断后的音频数据
                 break;
             }
-            
+            printf("111111111111111111111111111111111111111111111 \n");
             // === 添加调试日志 ===
             struct timeval debug_tv;
             gettimeofday(&debug_tv, NULL);
@@ -771,6 +848,7 @@ static RK_S32 process_received_message(MY_RECORDER_CTX_S *ctx, unsigned char msg
             g_timing_stats.audio_data_packets++;
             g_timing_stats.total_audio_bytes += data_len;
             
+
             // 检查是否是音频包尾标记
             if (data_len == 8 && memcmp(data, AUDIO_END_MARKER, 8) == 0) {
                 printf("🔊 [DEBUG-MARKER] 音频包结束标记, 当前缓冲区:%zu字节\n", ctx->audio_buffer_size);
@@ -1017,7 +1095,7 @@ static RK_S32 receive_socket_response(MY_RECORDER_CTX_S *ctx) {
     int consecutive_non_progress_msgs = 0;  // 连续非进展消息计数
     char log_msg[256];
     //const char * saveaudiopath = "/tmp/test.pcm";
-    printf("=== 开始接收服务器响应 ===");
+    printf("=== 开始接收服务器响应 === \n");
     // FILE *fp = NULL;
     // if (saveaudiopath) {
     //     fp = fopen(saveaudiopath, "wb");
@@ -1028,8 +1106,9 @@ static RK_S32 receive_socket_response(MY_RECORDER_CTX_S *ctx) {
     //     fflush(stdout);
     // }
 
-
+    printf("gRecorderExit:%d , ai_end_received:%d \n",gRecorderExit,ai_end_received);
     while (!gRecorderExit && !ai_end_received) {
+        printf("gInterruptAIResponse:%d \n",gInterruptAIResponse);
         if (gInterruptAIResponse) {
             printf("INFO: AI响应被用户抢话中断，立即进入录音\n");
             break;
@@ -1047,12 +1126,14 @@ static RK_S32 receive_socket_response(MY_RECORDER_CTX_S *ctx) {
         }
         
         message_count++;
-        // snprintf(log_msg, sizeof(log_msg), "INFO: Processing message #%d (type=0x%02X)", message_count, msg_type);
-        // printf(log_msg);
+        snprintf(log_msg, sizeof(log_msg), "[bayes123]->INFO: Processing message #%d (type=0x%02X)", message_count, msg_type);
+        printf(log_msg);
         
+
+
         // 处理接收到的消息
         process_received_message(ctx, msg_type, buffer, data_len);
-        
+         snprintf(log_msg, sizeof(log_msg), "[bayes443]->INFO: Processing message #%d (type=0x%02X)", message_count, msg_type);
         // 跟踪进展性消息
         if (msg_type == MSG_AUDIO_DATA || msg_type == MSG_TEXT_DATA || 
             msg_type == MSG_AI_START || msg_type == MSG_AUDIO_START) {
@@ -1185,7 +1266,8 @@ static RK_S32 upload_audio_to_socket_server(MY_RECORDER_CTX_S *ctx) {
         return RK_FAILURE;
     }
     //printf("INFO: Successfully connected to socket server");
-    
+
+    sendingvoice = RK_TRUE;
     // 发送配置消息
     //printf("INFO: Sending configuration message");
     if (send_config_message(ctx->sockfd, ctx->responseFormat) != RK_SUCCESS) {
@@ -1195,6 +1277,14 @@ static RK_S32 upload_audio_to_socket_server(MY_RECORDER_CTX_S *ctx) {
     }
     //printf("INFO: Configuration message sent successfully");
     
+    //发送图片消息
+    if(send_images_message(ctx->sockfd) != RK_SUCCESS)
+    {
+        printf("ERROR: Failed to send images message");
+        close(ctx->sockfd);
+        return RK_FAILURE;
+    }
+
     // 发送语音文件
     //printf("INFO: Starting voice file transmission");
     if (send_voice_file_to_socket_server(ctx) != RK_SUCCESS) {
@@ -1203,13 +1293,13 @@ static RK_S32 upload_audio_to_socket_server(MY_RECORDER_CTX_S *ctx) {
         return RK_FAILURE;
     }
     //printf("INFO: Voice file sent successfully");
-    
+    sendingvoice = RK_FALSE;
     // 接收响应
     //printf("INFO: Starting to receive server response");
     RK_S32 result = receive_socket_response(ctx);
     grecvservRespon = RK_FALSE;
     // 关闭连接
-    //printf("INFO: Closing socket connection");
+    printf("INFO:[bayes2123]:grecvservRespon%d \n",grecvservRespon);
     //close(ctx->sockfd);
     
     if (result == RK_SUCCESS) {
@@ -2973,7 +3063,7 @@ static RK_S32 wait_for_gpio_press(MY_RECORDER_CTX_S *ctx) {
     unsigned char msg_type;
     char buffer[SOCKET_RESPONSE_BUFFER_SIZE];
     unsigned int data_len;
-    //printf("[info]等待服务器输入开始录音,目前 gGpioPressed:%d\n",gGpioPressed);
+    //printf("[info]等待服务器输入开始录音,目前 grecvservRespon:%d\n",grecvservRespon);
     while (!gRecorderExit && !grecvservRespon) {
         // current_state = read_gpio_state(ctx->gpioDebugPath, ctx->s32GpioNumber);
         
@@ -3033,10 +3123,11 @@ static RK_S32 wait_for_gpio_press(MY_RECORDER_CTX_S *ctx) {
         } else {
             printf("INFO: [抢话] 已在录音中，忽略重复触发\n");
         }
-        printf("INFO: Starting recording...\n");
+       
         fflush(stdout);
         gGpioPressed = RK_TRUE;
         grecvservRespon = RK_TRUE;
+        printf("INFO: Starting recording...  grecvservRespon:%d\n",grecvservRespon);
         //gGpioPressed = RK_TRUE;
         return RK_SUCCESS;
         //}
@@ -3127,6 +3218,42 @@ static void* gpio_monitor_thread(void *ptr) {
     pthread_exit(NULL);
     return NULL;
 }
+
+// // 视频采集线程  备用
+// static void *capture_thread_func(void *arg) {
+//     char cmd[512];
+//     int retry_count = 0;
+//     printf("[INFO] 视频采集线程启动\n");
+    
+//     while (atomic_load(&g_ctx.running)) {
+//         // 构建v4l2-ctl命令
+//         snprintf(cmd, sizeof(cmd),
+//                 "v4l2-ctl -d %s --set-fmt-video=width=%d,height=%d,pixelformat=%s "
+//                 "--stream-mmap=3 --stream-to=%s --stream-count=%d --stream-skip=%d",
+//                 VIDEO_DEVICE, IMAGE_WIDTH, IMAGE_HEIGHT, PIXEL_FORMAT,
+//                 RAW_FILE_PATH, STREAM_COUNT, STREAM_SKIP);
+        
+//         printf("[INFO] 执行命令: %s\n", cmd);
+//         // 执行命令
+//         while(atomic_load(&g_ctx.sending)) 
+//         {
+//             continue;
+//         }
+//         int result = system(cmd);
+//         printf("result-----:%d \n",result);
+//         if (result == 0) {
+//             printf("[INFO] 本次视频采集成功...\n");
+//             // 等待一段时间再进行下一次采集
+//             usleep(100);  // 100ms
+//         } else {
+//             printf("本次视频采集失败 ... [INFO] 等待 %d ms 后重试...\n");
+//             usleep(1000);
+//         }
+//     }
+    
+//     printf("[INFO] 视频采集线程结束\n");
+//     return NULL;
+// }
 
 int main(int argc, const char **argv) {
     MY_RECORDER_CTX_S *ctx;
@@ -3365,6 +3492,7 @@ int main(int argc, const char **argv) {
     }
     
     printf("INFO: Successfully connected to socket server:ctx->sockfd:%d",ctx->sockfd);
+
     unsigned char header[5];
     // while(1)
     // {
@@ -3372,6 +3500,12 @@ int main(int argc, const char **argv) {
     //     printf("INFO:%d,,%s",received_bytes,header);
     //     printf("11111111111111111");
     // }
+
+    //图片采集线程
+
+
+
+
     //心跳包断开重连机制，线程重复的向服务端发送，服务端
     pthread_t clientHeartThread;
     printf("INFO: Starting client heart thread start...\n");
